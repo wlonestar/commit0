@@ -36,7 +36,7 @@ ADD https://astral.sh/uv/install.sh /uv-installer.sh
 RUN sh /uv-installer.sh && rm /uv-installer.sh
 
 # Ensure the installed binary is on the `PATH`
-ENV PATH="/root/.cargo/bin/:$PATH"
+ENV PATH="/root/.local/bin:/root/.cargo/bin/:$PATH"
 """
 
 _DOCKERFILE_REPO = r"""FROM --platform={platform} commit0.base:latest

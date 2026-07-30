@@ -101,6 +101,12 @@ def build_image(
                 # Remove ANSI escape sequences from the log
                 chunk_stream = ansi_escape.sub("", chunk["stream"])
                 logger.info(chunk_stream.strip())
+            elif "error" in chunk or "errorDetail" in chunk:
+                # Docker reports build step failures as error chunks instead
+                # of raising; surface them instead of claiming success
+                error_message = chunk.get("error") or str(chunk["errorDetail"])
+                logger.error(error_message)
+                raise BuildImageError(image_name, error_message, logger)
         logger.info("Image built successfully!")
     except docker.errors.APIError as e:
         logger.error(f"docker.errors.APIError during {image_name}: {e}")

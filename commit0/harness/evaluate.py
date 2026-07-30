@@ -53,6 +53,9 @@ def main(
         hashed_test_ids = get_hash_string(example["test"]["test_dir"])
         if branch is None:
             git_path = os.path.join(base_dir, example["instance_id"])
+            if not os.path.exists(git_path):
+                # fall back to base_dir/repo_name, mirroring run_pytest_ids
+                git_path = os.path.join(base_dir, repo_name)
             branch = get_active_branch(git_path)
         log_dir = (
             RUN_PYTEST_LOG_DIR
