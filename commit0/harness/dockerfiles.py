@@ -41,6 +41,12 @@ ENV PATH="/root/.local/bin:/root/.cargo/bin/:$PATH"
 
 _DOCKERFILE_REPO = r"""FROM --platform={platform} commit0.base:latest
 
+# Use Tsinghua PyPI mirror for fast package downloads in China
+# (UV_INDEX_URL for older uv, UV_DEFAULT_INDEX for newer uv, PIP_INDEX_URL for pip)
+ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \
+    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+
 COPY ./setup.sh /root/
 RUN chmod +x /root/setup.sh
 RUN /bin/bash /root/setup.sh
