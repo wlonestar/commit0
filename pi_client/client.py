@@ -192,7 +192,7 @@ class PiClientConfig(BaseModel):
     model: str = "openrouter/deepseek/deepseek-v4-flash-0731"
     thinking_level: str = "high"
     retries: int = 2
-    message_timeout: Optional[float] = 300
+    message_timeout: Optional[float] = 1200
     node_bin: str = "node"
     session_dir: Optional[str] = None
 

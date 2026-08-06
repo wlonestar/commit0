@@ -2,6 +2,8 @@ import bz2
 import git
 import os
 import re
+import shlex
+import subprocess
 from dataclasses import asdict
 from pathlib import Path
 from typing import List
@@ -484,6 +486,69 @@ def get_changed_files_from_commits(
     except Exception as e:
         print(f"An error occurred: {e}")
         return []
+
+
+def create_sandbox_repo(
+    local_repo: git.Repo, base_commit: str, sandbox_dir: Path
+) -> tuple[git.Repo, str]:
+    """Materialize `base_commit` into `sandbox_dir` as a fresh single-commit repo.
+
+    Non-destructive anti-cheat: the sandbox has its own brand-new object
+    store, so the reference implementation (which lives in the original
+    repo's history) is physically absent — while the original repo keeps
+    its full history and stays reusable for subsequent runs.
+
+    Returns the sandbox repo and the SHA of its initial (base) commit.
+    """
+    if sandbox_dir.exists() and any(sandbox_dir.iterdir()):
+        raise FileExistsError(
+            f"sandbox dir {sandbox_dir} is not empty; use a fresh directory"
+        )
+    sandbox_dir.mkdir(parents=True, exist_ok=True)
+    # `git archive` preserves file modes and symlinks; piping through tar
+    # avoids GitPython's text-mode output mangling binary files.
+    subprocess.run(
+        f"git archive {shlex.quote(base_commit)} | tar -x -C {shlex.quote(str(sandbox_dir))}",
+        shell=True,
+        cwd=local_repo.working_dir,
+        check=True,
+    )
+    sb_repo = git.Repo.init(sandbox_dir)
+    with sb_repo.config_writer() as cw:
+        cw.set_value("user", "name", "commit0-agent")
+        cw.set_value("user", "email", "agent@commit0.local")
+    sb_repo.git.add(A=True)
+    sb_repo.index.commit("commit0 base")
+    return sb_repo, sb_repo.head.commit.hexsha
+
+
+def collect_sandbox_patch(sb_repo: git.Repo, base_sha: str) -> str:
+    """Diff the sandbox's final state against its initial base commit.
+
+    Commits any uncommitted leftovers first, so both the agent's own
+    commits and stray worktree changes are captured.
+    """
+    sb_repo.git.add(A=True)
+    if sb_repo.index.diff("HEAD"):
+        sb_repo.index.commit("one-shot implementation")
+    return sb_repo.git.diff(base_sha, "HEAD", "--binary")
+
+
+def apply_patch_to_repo(
+    local_repo: git.Repo, patch: str, message: str, patch_file: Path
+) -> bool:
+    """Apply a sandbox patch onto the current branch of the original repo
+    and commit it. Returns False if the patch is empty (agent did nothing)."""
+    if not patch.strip():
+        return False
+    # GitPython strips the trailing newline of `git diff` output; git apply
+    # rejects a patch whose last line is not newline-terminated.
+    if not patch.endswith("\n"):
+        patch += "\n"
+    patch_file.write_text(patch)
+    local_repo.git.apply("--index", str(patch_file))
+    local_repo.index.commit(message)
+    return True
 
 
 def args2string(agent_config: AgentConfig) -> str:

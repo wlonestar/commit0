@@ -178,3 +178,5 @@ pnpm-debug.log*
 .npm/
 .nyc_output/
 coverage/
+
+.DS_Store

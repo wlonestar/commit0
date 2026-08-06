@@ -69,7 +69,7 @@ def highlight(text: str, color: str) -> str:
 def config(
     agent_name: str = typer.Argument(
         ...,
-        help=f"Agent to use, we only support {highlight('aider', Colors.ORANGE)} for now",
+        help=f"Agent to use: {highlight('aider', Colors.ORANGE)} or {highlight('pi', Colors.ORANGE)}",
     ),
     model_name: str = typer.Option(
         "claude-3-5-sonnet-20240620",
@@ -139,6 +139,27 @@ def config(
         False,
         help="Record the test for each commit",
     ),
+    run_one_shot: bool = typer.Option(
+        False,
+        help="Hand the whole repo + spec to the agent in a single run, "
+        "instead of iterating module-by-module",
+    ),
+    one_shot_timeout: int = typer.Option(
+        7200,
+        help="Wall-clock budget (seconds) per one-shot attempt; 0 means no limit. "
+        "Effective ceiling is retries (2) x this value",
+    ),
+    sandbox_run: bool = typer.Option(
+        False,
+        help="Run the agent in a clean sandbox repo created from base_commit and "
+        "apply the resulting diff back onto the branch "
+        "(anti-cheat; the local clone stays reusable)",
+    ),
+    thinking_level: str = typer.Option(
+        "high",
+        help="Pi backend thinking effort: off|minimal|low|medium|high|xhigh|max. "
+        "Lower it if the model hits the output limit mid-thinking",
+    ),
     pre_commit_config_path: str = typer.Option(
         ".pre-commit-config.yaml",
         help="Path to the pre-commit config file",
@@ -175,6 +196,10 @@ def config(
         "run_entire_dir_lint": run_entire_dir_lint,
         "pre_commit_config_path": pre_commit_config_path,
         "record_test_for_each_commit": record_test_for_each_commit,
+        "run_one_shot": run_one_shot,
+        "one_shot_timeout": one_shot_timeout,
+        "sandbox_run": sandbox_run,
+        "thinking_level": thinking_level,
     }
 
     write_agent_config(agent_config_file, agent_config)

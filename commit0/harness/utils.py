@@ -164,7 +164,10 @@ def create_repo_on_github(
 
 
 def generate_patch_between_commits(
-    repo: git.Repo, old_commit: str, new_commit: str
+    repo: git.Repo,
+    old_commit: str,
+    new_commit: str,
+    exclude_paths: Optional[list[str]] = None,
 ) -> str:
     """Generate a patch string by comparing two specified commits.
 
@@ -173,6 +176,9 @@ def generate_patch_between_commits(
         repo (git.Repo): An instance of the git.Repo object representing the repository.
         old_commit (str): The hash or reference to the old commit.
         new_commit (str): The hash or reference to the new commit.
+        exclude_paths (list[str] | None): Extra pathspecs to exclude from the diff
+            (e.g. test directories and lint/test config files, so that agent edits
+            to them do not leak into the evaluation environment).
 
     Returns:
     -------
@@ -183,10 +189,11 @@ def generate_patch_between_commits(
         git.GitCommandError: If there is an error while running git commands.
 
     """
+    pathspecs = [".", ":(exclude)spec.pdf.bz2"]
+    for path in exclude_paths or []:
+        pathspecs.append(f":(exclude){path}")
     try:
-        patch = repo.git.diff(
-            old_commit, new_commit, "--", ".", ":(exclude)spec.pdf.bz2"
-        )
+        patch = repo.git.diff(old_commit, new_commit, "--", *pathspecs)
         return patch + "\n\n"
     except git.GitCommandError as e:
         raise Exception(f"Error generating patch: {e}")

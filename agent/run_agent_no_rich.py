@@ -11,6 +11,9 @@ from agent.agent_utils import (
     get_changed_files_from_commits,
     update_message_with_dependencies,
     get_lint_cmd,
+    create_sandbox_repo,
+    collect_sandbox_patch,
+    apply_patch_to_repo,
     read_yaml_config,
 )
 import subprocess
@@ -60,7 +63,12 @@ def run_agent_for_repo(
     if agent_config.agent_name == "aider":
         agent = AiderAgents(agent_config.max_iteration, agent_config.model_name)
     elif agent_config.agent_name == "pi":
-        agent = PiAgents(agent_config.max_iteration, agent_config.model_name)
+        agent = PiAgents(
+            agent_config.max_iteration,
+            agent_config.model_name,
+            timeout=getattr(agent_config, "one_shot_timeout", 0) or None,
+            thinking_level=getattr(agent_config, "thinking_level", "high"),
+        )
     else:
         raise NotImplementedError(
             f"{agent_config.agent_name} is not implemented; please add your implementations in baselines/agents.py."
@@ -120,7 +128,53 @@ def run_agent_for_repo(
         if agent_config is None:
             raise ValueError("Invalid input")
 
-        if agent_config.run_tests:
+        if getattr(agent_config, "run_one_shot", False):
+            # One-shot mode: hand the whole repo + spec to the agent in a single
+            # run; the agent explores and implements everything by itself.
+            message = get_message(agent_config, repo_path, test_files=test_files)
+            message += (
+                "\n\nRules: implement everything yourself from the provided "
+                "specification. Do not use git history (git log/diff/checkout/"
+                "restore of other commits or branches) or external sources to "
+                "obtain the reference implementation."
+            )
+            one_shot_log_dir = experiment_log_dir / "one_shot"
+            use_sandbox = getattr(agent_config, "sandbox_run", False)
+            if use_sandbox:
+                # Clean workspace materialized from base_commit; the original
+                # repo (and its history) is never touched by the agent.
+                sb_repo, sb_base = create_sandbox_repo(
+                    local_repo, example["base_commit"], one_shot_log_dir / "workspace"
+                )
+                work_dir = one_shot_log_dir / "workspace"
+            else:
+                work_dir = Path(repo_path)
+            with DirContext(str(work_dir)):
+                _ = agent.run(message, "", "", [], one_shot_log_dir)
+            if use_sandbox:
+                # Bring the agent's work back: diff the sandbox against its
+                # base and apply the patch onto the evaluation branch.
+                patch = collect_sandbox_patch(sb_repo, sb_base)
+                apply_patch_to_repo(
+                    local_repo,
+                    patch,
+                    f"one-shot implementation by {agent_config.agent_name}",
+                    one_shot_log_dir / "sandbox.patch",
+                )
+            else:
+                # Pi does not auto-commit (aider does); make sure the work lands
+                # on the branch so that evaluation can see it.
+                local_repo.git.add(A=True)
+                if local_repo.index.diff("HEAD"):
+                    local_repo.index.commit(
+                        f"one-shot implementation by {agent_config.agent_name}"
+                    )
+            if agent_config.record_test_for_each_commit:
+                current_commit = local_repo.head.commit.hexsha
+                eval_results[current_commit] = run_eval_after_each_commit(
+                    branch, backend, commit0_config_file
+                )
+        elif agent_config.run_tests:
             # when unit test feedback is available, iterate over test files
             for test_file in test_files:
                 test_cmd = f"python -m commit0 test {repo_path} {test_file} --branch {branch} --backend {backend} --commit0-config-file {commit0_config_file} --timeout 100"
@@ -207,7 +261,12 @@ def run_agent(
     """
     config = read_yaml_config(agent_config_file)
 
-    agent_config = AgentConfig(**config)
+    # Tolerate stale keys (e.g. purge_history) in .agent.yaml files written
+    # by older versions of `agent config`.
+    known_fields = set(AgentConfig.__dataclass_fields__)
+    agent_config = AgentConfig(
+        **{k: v for k, v in config.items() if k in known_fields}
+    )
 
     commit0_config_file = os.path.abspath(commit0_config_file)
     commit0_config = read_commit0_config_file(commit0_config_file)

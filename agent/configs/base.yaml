@@ -12,6 +12,10 @@ agent_config:
   use_lint_info: false
   pre_commit_config_path: .pre-commit-config.yaml
   run_tests: True
+  run_one_shot: false
+  one_shot_timeout: 7200
+  sandbox_run: false
+  thinking_level: "high"
   max_repo_info_length: 10000
   max_unit_tests_info_length: 10000
   max_spec_info_length: 10000

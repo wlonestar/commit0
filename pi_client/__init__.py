@@ -1,4 +1,7 @@
-from pi_client.client import ContextUsage, PiClient, PiClientConfig, SessionStats, SessionTokens
+from pi_client.client import (
+    ContextUsage, PiClient, PiClientConfig, SessionStats, SessionTokens,
+    PiAgentError
+)
 
 __all__ = [
     "ContextUsage",
@@ -6,4 +9,5 @@ __all__ = [
     "PiClientConfig",
     "SessionStats",
     "SessionTokens",
+    "PiAgentError",
 ]

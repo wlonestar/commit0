@@ -149,8 +149,18 @@ def main(
                 )
                 patch += "\n\n" + example["test"]["test_patch"]
         else:
+            # Test integrity: agent edits to tests / test & lint configs must
+            # not leak into the evaluation environment (reward-hacking guard).
             patch = generate_patch_between_commits(
-                local_repo, example["base_commit"], commit_id
+                local_repo,
+                example["base_commit"],
+                commit_id,
+                exclude_paths=[
+                    example["test"]["test_dir"],
+                    "conftest.py",
+                    "pytest.ini",
+                    ".pre-commit-config.yaml",
+                ],
             )
 
         # make eval file

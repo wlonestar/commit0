@@ -11,7 +11,7 @@ from aider.io import InputOutput
 import re
 import os
 
-from pi_client import PiClientConfig, PiClient, SessionStats
+from pi_client import PiClientConfig, PiClient, SessionStats, PiAgentError
 
 
 def handle_logging(logging_name: str, log_file: Path) -> None:
@@ -168,9 +168,19 @@ class PiReturn(AgentReturn):
 
 
 class PiAgents(Agents):
-    def __init__(self, max_iteration: int, model_name: str):
+    def __init__(
+        self,
+        max_iteration: int,
+        model_name: str,
+        timeout: Optional[int] = None,
+        thinking_level: str = "high",
+    ):
         super().__init__(max_iteration)
-        self.client = PiClient(PiClientConfig(model=model_name))
+        self.client = PiClient(
+            PiClientConfig(model=model_name, thinking_level=thinking_level)
+        )
+        # Wall-clock budget per run in seconds; None means no limit.
+        self.timeout = timeout
 
     def run(
         self,
@@ -196,7 +206,13 @@ class PiAgents(Agents):
         )
 
         # Run the agent (cwd is the repo root; run_agent.py wraps us in DirContext)
-        output = asyncio.run(self.client.run(prompt, cwd=os.getcwd()))
+        try:
+            output = asyncio.run(
+                self.client.run(prompt, cwd=os.getcwd(), timeout=self.timeout)
+            )
+        except PiAgentError as e:
+            # Batch runs must not die on a single failed repo/file; record and move on.
+            output = f"\n[PiAgents] agent run failed: {e}\n"
 
         session_state = self.client.get_session_state()
         with open(log_file, "w") as f:

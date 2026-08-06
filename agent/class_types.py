@@ -22,3 +22,18 @@ class AgentConfig:
     run_tests: bool
     max_iteration: int
     record_test_for_each_commit: bool
+    # One-shot mode: hand the whole repo + spec to the agent in a single run,
+    # instead of iterating file-by-file / test-by-test.
+    run_one_shot: bool = False
+    # Wall-clock budget (seconds) per one-shot attempt; 0 means no limit.
+    # Note the effective ceiling is retries (2) x this value.
+    one_shot_timeout: int = 7200
+    # Anti-cheat: run the agent in a fresh sandbox repo materialized from
+    # base_commit; the resulting diff is applied back onto the branch.
+    # The original clone keeps its full history and can be re-run without
+    # re-cloning.
+    sandbox_run: bool = False
+    # Pi backend: thinking effort level (off|minimal|low|medium|high|xhigh|max).
+    # "high" can make reasoning models burn the whole output budget on a
+    # single thinking turn (stopReason=length); lower it if that happens.
+    thinking_level: str = "high"
