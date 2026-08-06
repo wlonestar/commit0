@@ -5,7 +5,10 @@ FROM --platform={platform} ubuntu:22.04
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
-RUN apt update && apt install -y \
+# Fix DNS and install base packages in a single RUN (DNS changes don't persist across RUNs)
+RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
+    echo "nameserver 114.114.114.114" >> /etc/resolv.conf && \
+    apt update && apt install -y \
 wget \
 build-essential \
 libffi-dev \
@@ -20,14 +23,17 @@ locales-all \
 tzdata \
 && rm -rf /var/lib/apt/lists/*
 
-# Install the latest version of Git
-RUN apt-get update && apt-get install software-properties-common -y
-RUN add-apt-repository ppa:git-core/ppa -y
-RUN apt-get update && apt-get install git -y
+# Fix DNS for subsequent RUNs and install Git
+RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
+    echo "nameserver 114.114.114.114" >> /etc/resolv.conf && \
+    apt-get update && apt-get install software-properties-common -y && \
+    add-apt-repository ppa:git-core/ppa -y && \
+    apt-get update && apt-get install git -y
 
-# Set up uv
-# The installer requires curl (and certificates) to download the release archive
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+# Fix DNS and install curl/ca-certificates for uv installer
+RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
+    echo "nameserver 114.114.114.114" >> /etc/resolv.conf && \
+    apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
 
 # Download the latest installer
 ADD https://astral.sh/uv/install.sh /uv-installer.sh
@@ -40,12 +46,6 @@ ENV PATH="/root/.local/bin:/root/.cargo/bin/:$PATH"
 """
 
 _DOCKERFILE_REPO = r"""FROM --platform={platform} commit0.base:latest
-
-# Use Tsinghua PyPI mirror for fast package downloads in China
-# (UV_INDEX_URL for older uv, UV_DEFAULT_INDEX for newer uv, PIP_INDEX_URL for pip)
-ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
-    UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \
-    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
 COPY ./setup.sh /root/
 RUN chmod +x /root/setup.sh
