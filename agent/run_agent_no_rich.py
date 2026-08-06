@@ -15,7 +15,7 @@ from agent.agent_utils import (
 )
 import subprocess
 import json
-from agent.agents import AiderAgents
+from agent.agents import AiderAgents, PiAgents
 from typing import cast
 from agent.class_types import AgentConfig
 from commit0.harness.constants import SPLIT
@@ -59,6 +59,8 @@ def run_agent_for_repo(
 
     if agent_config.agent_name == "aider":
         agent = AiderAgents(agent_config.max_iteration, agent_config.model_name)
+    elif agent_config.agent_name == "pi":
+        agent = PiAgents(agent_config.max_iteration, agent_config.model_name)
     else:
         raise NotImplementedError(
             f"{agent_config.agent_name} is not implemented; please add your implementations in baselines/agents.py."

@@ -14,7 +14,7 @@ from agent.agent_utils import (
 )
 import json
 import subprocess
-from agent.agents import AiderAgents
+from agent.agents import AiderAgents, PiAgents
 from typing import Optional, Type, cast
 from types import TracebackType
 from agent.class_types import AgentConfig
@@ -97,6 +97,8 @@ def run_agent_for_repo(
 
     if agent_config.agent_name == "aider":
         agent = AiderAgents(agent_config.max_iteration, agent_config.model_name)
+    elif agent_config.agent_name == "pi":
+        agent = PiAgents(agent_config.max_iteration, agent_config.model_name)
     else:
         raise NotImplementedError(
             f"{agent_config.agent_name} is not implemented; please add your implementations in baselines/agents.py."

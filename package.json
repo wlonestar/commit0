@@ -1,0 +1,22 @@
+{
+  "name": "pi-python-wrapper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Python wrapper around the Pi Agent SDK via a Node.js bridge",
+  "type": "module",
+  "main": "src/agent.mts",
+  "scripts": {
+    "agent": "node src/agent.mts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.83.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,6 +1,8 @@
+import asyncio
 import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Optional
 import logging
 
 from aider.coders import Coder
@@ -8,6 +10,8 @@ from aider.models import Model
 from aider.io import InputOutput
 import re
 import os
+
+from pi_client import PiClientConfig, PiClient, SessionStats
 
 
 def handle_logging(logging_name: str, log_file: Path) -> None:
@@ -153,3 +157,90 @@ class AiderAgents(Agents):
         sys.stderr = sys.__stderr__
 
         return AiderReturn(log_file)
+
+
+class PiReturn(AgentReturn):
+    def __init__(self, log_file: Path, session_state: Optional[SessionStats]):
+        super().__init__(log_file)
+        self.session_state = session_state
+        if session_state is not None:
+            self.last_cost = session_state.cost
+
+
+class PiAgents(Agents):
+    def __init__(self, max_iteration: int, model_name: str):
+        super().__init__(max_iteration)
+        self.client = PiClient(PiClientConfig(model=model_name))
+
+    def run(
+        self,
+        message: str,
+        test_cmd: str,
+        lint_cmd: str,
+        fnames: list[str],
+        log_dir: Path,
+        test_first: bool = False,
+        lint_first: bool = False,
+    ) -> AgentReturn:
+        """Start pi agent"""
+        log_dir = log_dir.resolve()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "pi.log"
+
+        # Keep session JSONL out of the target repo (default is <cwd>/.pi/sessions,
+        # which would dirty the git worktree under evaluation).
+        self.client.config.session_dir = str(log_dir / "sessions")
+
+        prompt = self._build_prompt(
+            message, test_cmd, lint_cmd, fnames, test_first, lint_first
+        )
+
+        # Run the agent (cwd is the repo root; run_agent.py wraps us in DirContext)
+        output = asyncio.run(self.client.run(prompt, cwd=os.getcwd()))
+
+        session_state = self.client.get_session_state()
+        with open(log_file, "w") as f:
+            f.write(output)
+            if session_state is not None:
+                f.write("\n\n--- Session Stats ---\n")
+                f.write(session_state.model_dump_json(indent=2, by_alias=True))
+
+        return PiReturn(log_file, session_state)
+
+    def _build_prompt(
+        self,
+        message: str,
+        test_cmd: str,
+        lint_cmd: str,
+        fnames: list[str],
+        test_first: bool,
+        lint_first: bool,
+    ) -> str:
+        """Assemble the prompt for the pi agent from message/test/lint context."""
+        parts: list[str] = []
+        if fnames:
+            parts.append(
+                "Target files to edit:\n" + "\n".join(f"- {f}" for f in fnames)
+            )
+        if message:
+            parts.append(message)
+        if test_cmd:
+            test_block = (
+                f"Run the tests with:\n\n    {test_cmd}\n\n"
+                "Fix the code until all tests pass. "
+                f"You may iterate up to {self.max_iteration} times."
+            )
+            if test_first:
+                parts.insert(0, test_block)
+            else:
+                parts.append(test_block)
+        if lint_cmd:
+            lint_block = (
+                f"Run the linter with:\n\n    {lint_cmd}\n\n"
+                "and fix all reported lint errors."
+            )
+            if lint_first:
+                parts.insert(0, lint_block)
+            else:
+                parts.append(lint_block)
+        return "\n\n".join(parts)
