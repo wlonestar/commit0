@@ -2,7 +2,7 @@ import bz2
 import git
 import os
 import re
-import shlex
+import shutil
 import subprocess
 from dataclasses import asdict
 from pathlib import Path
@@ -13,6 +13,8 @@ from graphlib import TopologicalSorter, CycleError
 import yaml
 
 from agent.class_types import AgentConfig
+
+SPEC_ARTIFACTS = ("spec.pdf", "spec.pdf.bz2", "spec.txt")
 
 PROMPT_HEADER = ">>> Here is the Task:\n"
 REFERENCE_HEADER = "\n\n>>> Here is the Reference for you to finish the task:\n"
@@ -349,6 +351,7 @@ def get_message(
     agent_config: AgentConfig,
     repo_path: str,
     test_files: list[str] | None = None,
+    spec_dir: Path | None = None,
 ) -> str:
     """Get the message to Aider."""
     prompt = f"{PROMPT_HEADER}" + agent_config.user_prompt
@@ -382,12 +385,16 @@ def get_message(
         repo_info = ""
 
     if agent_config.use_spec_info:
-        with bz2.open("spec.pdf.bz2", "rb") as in_file:
-            with open("spec.pdf", "wb") as out_file:
-                out_file.write(in_file.read())
+        if spec_dir is None:
+            with bz2.open(Path(repo_path, "spec.pdf.bz2"), "rb") as in_file:
+                with Path(repo_path, "spec.pdf").open("wb") as out_file:
+                    out_file.write(in_file.read())
+            specification_pdf_path = Path(repo_path, "spec.pdf")
+        else:
+            specification_pdf_path = spec_dir / "spec.pdf"
         spec_info = (
             f"\n{SPEC_INFO_HEADER} "
-            + get_specification(specification_pdf_path=Path(repo_path, "spec.pdf"))[
+            + get_specification(specification_pdf_path=specification_pdf_path)[
                 : agent_config.max_spec_info_length
             ]
         )
@@ -505,14 +512,34 @@ def create_sandbox_repo(
             f"sandbox dir {sandbox_dir} is not empty; use a fresh directory"
         )
     sandbox_dir.mkdir(parents=True, exist_ok=True)
-    # `git archive` preserves file modes and symlinks; piping through tar
-    # avoids GitPython's text-mode output mangling binary files.
-    subprocess.run(
-        f"git archive {shlex.quote(base_commit)} | tar -x -C {shlex.quote(str(sandbox_dir))}",
-        shell=True,
-        cwd=local_repo.working_dir,
-        check=True,
-    )
+    # Keep benchmark reference material outside the agent's git workspace. If
+    # an agent extracts these files while reading the spec, they must not leak
+    # into the implementation patch.
+    archive_excludes = [f":(exclude){path}" for path in SPEC_ARTIFACTS]
+    archive_path = sandbox_dir.parent / f".{sandbox_dir.name}.tar"
+    try:
+        # `git archive` preserves file modes and symlinks. Writing its binary
+        # output directly avoids GitPython's text-mode output mangling files.
+        with archive_path.open("wb") as archive_file:
+            subprocess.run(
+                [
+                    "git",
+                    "archive",
+                    base_commit,
+                    "--",
+                    ".",
+                    *archive_excludes,
+                ],
+                cwd=local_repo.working_dir,
+                stdout=archive_file,
+                check=True,
+            )
+        subprocess.run(
+            ["tar", "-xf", str(archive_path), "-C", str(sandbox_dir)],
+            check=True,
+        )
+    finally:
+        archive_path.unlink(missing_ok=True)
     sb_repo = git.Repo.init(sandbox_dir)
     with sb_repo.config_writer() as cw:
         cw.set_value("user", "name", "commit0-agent")
@@ -520,6 +547,38 @@ def create_sandbox_repo(
     sb_repo.git.add(A=True)
     sb_repo.index.commit("commit0 base")
     return sb_repo, sb_repo.head.commit.hexsha
+
+
+def prepare_spec_dir(
+    local_repo: git.Repo, base_commit: str, spec_dir: Path
+) -> Path | None:
+    """Materialize the reference spec outside the agent's git workspace.
+
+    The benchmark stores the spec as ``spec.pdf.bz2`` in the base commit.
+    Exposing decompressed PDF and text copies in a sibling directory lets the
+    agent inspect the reference without making those files part of its patch.
+    """
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    compressed_path = spec_dir / "spec.pdf.bz2"
+    try:
+        with compressed_path.open("wb") as output:
+            subprocess.run(
+                ["git", "show", f"{base_commit}:spec.pdf.bz2"],
+                cwd=local_repo.working_dir,
+                stdout=output,
+                check=True,
+            )
+    except subprocess.CalledProcessError:
+        shutil.rmtree(spec_dir, ignore_errors=True)
+        return None
+
+    pdf_path = spec_dir / "spec.pdf"
+    with bz2.open(compressed_path, "rb") as input_file, pdf_path.open("wb") as output:
+        shutil.copyfileobj(input_file, output)
+    (spec_dir / "spec.txt").write_text(
+        get_specification(pdf_path), encoding="utf-8"
+    )
+    return spec_dir
 
 
 def collect_sandbox_patch(sb_repo: git.Repo, base_sha: str) -> str:
@@ -531,7 +590,14 @@ def collect_sandbox_patch(sb_repo: git.Repo, base_sha: str) -> str:
     sb_repo.git.add(A=True)
     if sb_repo.index.diff("HEAD"):
         sb_repo.index.commit("one-shot implementation")
-    return sb_repo.git.diff(base_sha, "HEAD", "--binary")
+    return sb_repo.git.diff(
+        base_sha,
+        "HEAD",
+        "--binary",
+        "--",
+        ".",
+        *(f":(exclude){path}" for path in SPEC_ARTIFACTS),
+    )
 
 
 def apply_patch_to_repo(

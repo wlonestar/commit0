@@ -12,6 +12,7 @@ from agent.agent_utils import (
     update_message_with_dependencies,
     get_lint_cmd,
     create_sandbox_repo,
+    prepare_spec_dir,
     collect_sandbox_patch,
     apply_patch_to_repo,
     read_yaml_config,
@@ -131,14 +132,29 @@ def run_agent_for_repo(
         if getattr(agent_config, "run_one_shot", False):
             # One-shot mode: hand the whole repo + spec to the agent in a single
             # run; the agent explores and implements everything by itself.
-            message = get_message(agent_config, repo_path, test_files=test_files)
+            one_shot_log_dir = experiment_log_dir / "one_shot"
+            spec_dir = prepare_spec_dir(
+                local_repo, example["base_commit"], one_shot_log_dir / "spec"
+            )
+            message = get_message(
+                agent_config, repo_path, test_files=test_files, spec_dir=spec_dir
+            )
+            if spec_dir is not None:
+                message += (
+                    "\n\nThe reference specification is available outside the git "
+                    f"workspace at {spec_dir.resolve()}. Read it from there when "
+                    "needed; do not copy spec.pdf, spec.pdf.bz2, or spec.txt into "
+                    "the repository."
+                )
             message += (
                 "\n\nRules: implement everything yourself from the provided "
                 "specification. Do not use git history (git log/diff/checkout/"
                 "restore of other commits or branches) or external sources to "
-                "obtain the reference implementation."
+                "obtain the reference implementation. Keep reasoning and progress "
+                "narration concise; do not emit long plans or prose implementations. "
+                "Limit the final response to at most 10 lines summarizing changed "
+                "files, test results, and unresolved issues."
             )
-            one_shot_log_dir = experiment_log_dir / "one_shot"
             use_sandbox = getattr(agent_config, "sandbox_run", False)
             if use_sandbox:
                 # Clean workspace materialized from base_commit; the original

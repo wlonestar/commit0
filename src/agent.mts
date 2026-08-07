@@ -22,6 +22,7 @@ import {
   type CreateAgentSessionOptions,
   getAgentDir,
   DefaultResourceLoader,
+  SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
 import { join } from "node:path";
@@ -82,6 +83,12 @@ async function main(): Promise<void> {
     if (resolved.thinkingLevel && !thinkingLevel) thinkingLevel = resolved.thinkingLevel;
   }
 
+  // In-memory settings.
+  const settingsManager = SettingsManager.inMemory({
+    compaction: { enabled: true },
+    retry: { enabled: true, maxRetries: 3 },
+  });
+
   // discover all prompts/skills from cwd/.pi/prompts, cwd/.pi/skills, etc.
   const loader = new DefaultResourceLoader({
     cwd: input.cwd,
@@ -98,6 +105,7 @@ async function main(): Promise<void> {
     modelRuntime,
     resourceLoader: loader,
     sessionManager: SessionManager.create(input.cwd, session_dir),
+    settingsManager,
   });
   try {
     session.subscribe((event: AgentSessionEvent) => {

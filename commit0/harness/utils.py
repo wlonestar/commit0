@@ -189,7 +189,14 @@ def generate_patch_between_commits(
         git.GitCommandError: If there is an error while running git commands.
 
     """
-    pathspecs = [".", ":(exclude)spec.pdf.bz2"]
+    # Specs are reference material for agents, not implementation files. They
+    # may be unpacked in an agent workspace while it is reading the prompt.
+    pathspecs = [
+        ".",
+        ":(exclude)spec.pdf",
+        ":(exclude)spec.pdf.bz2",
+        ":(exclude)spec.txt",
+    ]
     for path in exclude_paths or []:
         pathspecs.append(f":(exclude){path}")
     try:
