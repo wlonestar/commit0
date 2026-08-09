@@ -23,6 +23,15 @@ UNIT_TESTS_INFO_HEADER = "\n\n>>> Here are the Unit Tests Information:\n"
 LINT_INFO_HEADER = "\n\n>>> Here is the Lint Information:\n"
 SPEC_INFO_HEADER = "\n\n>>> Here is the Specification Information:\n"
 IMPORT_DEPENDENCIES_HEADER = "\n\n>>> Here are the Import Dependencies:\n"
+ONE_SHOT_RULES = (
+    "\n\nRules: implement everything yourself from the provided "
+    "specification. Do not use git history (git log/diff/checkout/"
+    "restore of other commits or branches) or external sources to "
+    "obtain the reference implementation. Keep reasoning and progress "
+    "narration concise; do not emit long plans or prose implementations. "
+    "Limit the final response to at most 10 lines summarizing changed "
+    "files, test results, and unresolved issues."
+)
 # prefix components:
 space = "    "
 branch = "│   "
@@ -404,6 +413,29 @@ def get_message(
     message_to_agent = prompt + repo_info + unit_tests_info + spec_info
 
     return message_to_agent
+
+
+def get_one_shot_message(
+    agent_config: AgentConfig,
+    repo_path: str,
+    test_files: list[str],
+    spec_dir: Path | None,
+) -> str:
+    """Assemble the complete message used by one-shot agents."""
+    message = get_message(
+        agent_config,
+        repo_path,
+        test_files=test_files,
+        spec_dir=spec_dir,
+    )
+    if spec_dir is not None:
+        message += (
+            "\n\nThe reference specification is available outside the git "
+            f"workspace at {spec_dir.resolve()}. Read it from there when "
+            "needed; do not copy spec.pdf, spec.pdf.bz2, or spec.txt into "
+            "the repository."
+        )
+    return message + ONE_SHOT_RULES
 
 
 def update_message_with_dependencies(message: str, dependencies: list[str]) -> str:

@@ -6,6 +6,7 @@ from git import Repo
 from agent.agent_utils import (
     create_branch,
     get_message,
+    get_one_shot_message,
     get_target_edit_files,
     get_changed_files_from_commits,
     update_message_with_dependencies,
@@ -176,24 +177,8 @@ def run_agent_for_repo(
             spec_dir = prepare_spec_dir(
                 local_repo, example["base_commit"], one_shot_log_dir / "spec"
             )
-            message = get_message(
+            message = get_one_shot_message(
                 agent_config, repo_path, test_files=test_files, spec_dir=spec_dir
-            )
-            if spec_dir is not None:
-                message += (
-                    "\n\nThe reference specification is available outside the git "
-                    f"workspace at {spec_dir.resolve()}. Read it from there when "
-                    "needed; do not copy spec.pdf, spec.pdf.bz2, or spec.txt into "
-                    "the repository."
-                )
-            message += (
-                "\n\nRules: implement everything yourself from the provided "
-                "specification. Do not use git history (git log/diff/checkout/"
-                "restore of other commits or branches) or external sources to "
-                "obtain the reference implementation. Keep reasoning and progress "
-                "narration concise; do not emit long plans or prose implementations. "
-                "Limit the final response to at most 10 lines summarizing changed "
-                "files, test results, and unresolved issues."
             )
             use_sandbox = getattr(agent_config, "sandbox_run", False)
             if use_sandbox:
