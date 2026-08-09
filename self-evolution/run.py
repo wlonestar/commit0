@@ -275,18 +275,15 @@ def commit_evolution_changes(
 ) -> str:
     """Stage generated changes, commit them, and return the commit SHA."""
     # Diagnostics are inputs/outputs of the evolution run, never part of the
-    # evolved commit. The explicit exclusion keeps that invariant even if a
-    # checkout does not ignore logs/ itself.
+    # evolved commit.  Stage everything and then explicitly unstage logs/ and
+    # node_modules/ so the invariant holds even when a checkout does not ignore
+    # those directories itself.
     _run(
-        [
-            "git",
-            "add",
-            "-A",
-            "--",
-            ".",
-            ":(exclude)logs",
-            ":(exclude)node_modules",
-        ],
+        ["git", "add", "-A", "--", "."],
+        cwd=worktree.path,
+    )
+    _run(
+        ["git", "reset", "--", "logs", "node_modules"],
         cwd=worktree.path,
     )
 
