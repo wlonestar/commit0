@@ -189,7 +189,7 @@ def _backoff_seconds(attempt: int) -> float:
 
 
 class PiClientConfig(BaseModel):
-    model: str = "openrouter/deepseek/deepseek-v4-flash-0731"
+    model: str = "deepseek/deepseek-v4-flash"
     thinking_level: str = "high"
     retries: int = 2
     message_timeout: Optional[float] = 1200
