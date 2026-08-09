@@ -31,6 +31,7 @@ ARTIFACT_SUFFIXES = {".jsonl", ".log"}
 ARTIFACT_NAMES = {
     ".agent.yaml",
     "iteration-analysis.md",
+    "proposal.diff",
     "pytest_exit_code.txt",
     "report.json",
 }
@@ -309,6 +310,15 @@ def commit_evolution_changes(
     if staged.returncode != 1:
         raise subprocess.CalledProcessError(staged.returncode, staged.args)
 
+    proposal_diff = worktree.path / "logs" / "self-evolution" / "proposal.diff"
+    proposal_diff.parent.mkdir(parents=True, exist_ok=True)
+    diff = _run(
+        ["git", "diff", "--cached", "--binary", "--no-ext-diff"],
+        cwd=worktree.path,
+        capture_output=True,
+    )
+    proposal_diff.write_text(diff.stdout, encoding="utf-8")
+
     _run(
         [
             "git",
@@ -569,6 +579,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         initial_agent_config_digest=initial_agent_config_digest,
     )
     print(f"Committed self-evolution changes as {commit_sha}", flush=True)
+    print(
+        "Saved self-evolution proposal diff to "
+        f"{worktree.path / 'logs' / 'self-evolution' / 'proposal.diff'}",
+        flush=True,
+    )
 
     if args.skip_next_iteration:
         print("Skipped the next agent iteration as requested", flush=True)

@@ -138,6 +138,8 @@ self-evolution: prepare iteration <timestamp>
 
 `logs/` 和 `node_modules` 不会进入提交。`.agent.yaml` 默认被项目忽略，只有内容被演化 Agent 修改或新建时，脚本才会强制暂存它。如果没有任何可提交修改，脚本报错并保留 worktree 和日志，方便排查。
 
+提交前的完整暂存差异会同时保存为 `logs/self-evolution/proposal.diff`。它与演化提交的内容一致，包含必要的二进制补丁和被修改的 `.agent.yaml`，但不包含 `logs/` 或 `node_modules/`。下一轮收集上一轮证据时也会复制该文件。
+
 ### 6. 运行仓库 Agent
 
 脚本在新 worktree 中执行与 `tips.md` 对应的命令：
@@ -192,6 +194,7 @@ python -m commit0 evaluate \
 │   │   └── ...                         # 上一轮关键证据的目录快照
 │   ├── self-evolution/
 │   │   ├── pi.log                      # 演化 Agent 的文本输出
+│   │   ├── proposal.diff               # 演化 Agent 提议并提交的完整差异
 │   │   ├── session-stats.json          # 演化 Agent 的 token、成本和上下文统计
 │   │   └── sessions/*.jsonl            # 演化 Agent 的完整 session
 │   ├── agent/<repo>/<branch>/<time>/
