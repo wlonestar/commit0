@@ -1,6 +1,6 @@
 # Self-evolution
 
-`self-evolution/run.py` 完成一轮 Commit-0 自演化：读取上一轮日志和评测结果，让 Pi 修改下一轮使用的提示词或 Agent 实现，在独立 worktree 中提交修改，然后运行新一轮 Agent、评测和复盘。
+`self-evolution/run.py` 管理 Commit-0 的 baseline 和后续自演化。当前 checkout 的 `logs/agent/` 没有有效运行产物时，脚本会先在当前 checkout 自动运行一次仓库 Agent、评测和复盘；已有产物时，脚本才读取上一轮证据，让 Pi 修改下一轮使用的提示词或 Agent 实现，在独立 worktree 中提交修改，然后运行新一轮 Agent、评测和复盘。
 
 脚本每次只执行一轮，不会自动循环。
 
@@ -14,9 +14,9 @@
 - `.agent.yaml` 已配置为需要评测的 Agent 模式。
 - 模型供应商的 API key 已写入当前 shell 环境。
 
-新 worktree 从当前 `HEAD` 创建。第一次运行前，应先提交 `self-evolution/`、`scripts/analysis.py` 和 `agent/` 中准备投入实验的代码。未提交的源码不会出现在新 worktree 中。`.agent.yaml` 和 `.commit0.yaml` 虽然被 Git 忽略，脚本会单独复制。
+后续迭代的新 worktree 从当前 `HEAD` 创建。第一次运行前，应先提交 `self-evolution/`、`scripts/analysis.py` 和 `agent/` 中准备投入实验的代码。未提交的源码不会出现在后续新 worktree 中。`.agent.yaml` 和 `.commit0.yaml` 虽然被 Git 忽略，脚本会单独复制。
 
-默认完整运行会调用一次演化 Agent、整批仓库 Agent、一次完整评测和一次复盘 Agent。先检查模型、并发数和超时设置，避免误触发高成本任务。
+冷启动默认会调用整批仓库 Agent、一次完整评测和一次复盘 Agent；后续完整迭代还会先调用一次演化 Agent。先检查模型、并发数和超时设置，避免误触发高成本任务。
 
 ## 快速开始
 
@@ -26,13 +26,23 @@
 python self-evolution/run.py
 ```
 
-脚本会打印新 worktree、实验分支和最终分析报告的位置。只准备并提交演化修改，不启动仓库 Agent 和评测时，可以运行：
+如果 `logs/agent/` 不存在、为空，或没有 `.agent.yaml`、Agent 日志、session JSONL 等有效运行产物，这条命令会直接在当前 checkout 启动 baseline：
+
+```text
+agent run -> commit0 evaluate -> analysis
+```
+
+baseline 完成后，在同一个 checkout 再执行一次 `python self-evolution/run.py`，脚本才会创建第一个候选 worktree，读取 baseline 产物并开始演化。
+
+已有上一轮产物时，只准备并提交演化修改，不启动下一轮仓库 Agent 和评测，可以运行：
 
 ```bash
 python self-evolution/run.py --skip-next-iteration
 ```
 
-下一轮要读取本轮产物，应从刚生成的 worktree 再次启动：
+冷启动时使用 `--skip-next-iteration` 不会创建 worktree，也不会启动 baseline。已有产物时，该参数仍会创建并提交演化 worktree，只跳过新一轮仓库 Agent、评测和复盘。
+
+候选 worktree 已经跑完 Agent、评测和复盘后，下一轮要读取它的产物，应从刚生成的 worktree 再次启动：
 
 ```bash
 cd .worktrees/worktree-<timestamp>
@@ -52,9 +62,21 @@ python /path/to/self-evolution/run.py \
 
 ## 一轮执行流程
 
+### 0. 自动补齐 baseline
+
+脚本首先递归检查当前 checkout 的 `logs/agent/`。只要找到仓库 Agent 写出的配置快照、`pi.log`、`aider.log` 或 session JSONL，就认为已有可供演化的上一轮证据。
+
+没有这些产物时，脚本不会启动无证据的演化 Agent，也不会创建候选 worktree，而是给本轮生成独立的实验分支名：
+
+```text
+self-evolution-baseline-20260809-153754-852379
+```
+
+随后在当前 checkout 直接执行仓库 Agent、评测和复盘。产物保存在当前 checkout 的 `logs/` 中。完成后再次运行脚本，才进入下面的常规演化流程。
+
 ### 1. 创建 worktree 和实验分支
 
-脚本通过 Git common directory 找到主 checkout，在下面创建一对同名迭代资源：
+已有上一轮 Agent 产物时，脚本通过 Git common directory 找到主 checkout，在下面创建一对同名迭代资源：
 
 ```text
 .worktrees/worktree-20260809-153754-852379/
@@ -145,7 +167,7 @@ python -m commit0 evaluate \
 
 评测结束后，`scripts/analysis.py` 会启动一个新的 Pi client。它只收集当前分支的证据，包括：
 
-- 仓库 Agent 的配置快照、`pi.log` 和 session JSONL。
+- 仓库 Agent 的配置快照、`pi.log` 或 `aider.log`，以及 session JSONL。
 - pytest 报告、退出码、测试输出、覆盖率和运行日志。
 - `commit0 evaluate` 的控制台输出。
 - `processing_summary_<branch>.json`，如果 rich 运行模式生成了该文件。
@@ -157,7 +179,7 @@ python -m commit0 evaluate \
 
 ## 主要产物
 
-下面是一次完整运行的代表性目录。具体文件取决于 Agent 配置、仓库数量和评测后端。
+下面是一次常规演化运行的代表性目录。具体文件取决于 Agent 配置、仓库数量和评测后端。首次 baseline 不创建 worktree；除 `previous/`、`self-evolution/` 和演化后的源码外，同类产物直接写入当前 checkout。
 
 ```text
 <main-checkout>/.worktrees/worktree-<timestamp>/
@@ -230,7 +252,7 @@ python -m commit0 evaluate \
 | `--evaluation-timeout` | `1800` | 传给每个仓库评测任务的超时 |
 | `--agent-command` | `python -m agent` | 覆盖 Agent 可执行文件，参数只接受一个可执行路径 |
 | `--commit0-command` | `python -m commit0` | 覆盖 Commit-0 可执行文件，参数只接受一个可执行路径 |
-| `--skip-next-iteration` | 关闭 | 只完成演化、提交，不运行仓库 Agent、评测和复盘 |
+| `--skip-next-iteration` | 关闭 | 已有产物时只完成演化和提交；冷启动时跳过自动 baseline |
 
 指定不同的演化和复盘模型：
 
@@ -253,6 +275,7 @@ python scripts/analysis.py <branch> \
 
 ## 失败后的检查位置
 
+- baseline 仓库 Agent 失败：查看当前 checkout 的 `logs/agent/<repo>/<baseline-branch>/`。
 - 演化 Agent 失败：查看 `logs/self-evolution/` 和其中的 session。
 - 没有可提交修改：查看 `logs/self-evolution/pi.log`，worktree 会保留。
 - 仓库 Agent 失败：查看 `logs/agent/<repo>/<branch>/`。

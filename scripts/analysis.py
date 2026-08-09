@@ -20,7 +20,12 @@ sys.path.insert(0, str(CHECKOUT_ROOT))
 from pi_client import PiClient, PiClientConfig  # noqa: E402
 
 
-AGENT_ARTIFACT_NAMES = {".agent.yaml", "eval_results.json", "pi.log"}
+AGENT_ARTIFACT_NAMES = {
+    ".agent.yaml",
+    "aider.log",
+    "eval_results.json",
+    "pi.log",
+}
 AGENT_ARTIFACT_SUFFIXES = {".jsonl"}
 EVALUATION_ARTIFACT_NAMES = {
     "coverage.json",

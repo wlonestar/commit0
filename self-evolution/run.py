@@ -1,4 +1,4 @@
-"""Create and run the next Commit-0 self-evolution iteration."""
+"""Bootstrap or run one Commit-0 self-evolution iteration."""
 
 from __future__ import annotations
 
@@ -35,11 +35,13 @@ ARTIFACT_NAMES = {
     "report.json",
 }
 RUNTIME_CONFIG_NAMES = (".agent.yaml", ".commit0.yaml")
+AGENT_RUN_ARTIFACT_NAMES = {".agent.yaml", "aider.log", "pi.log"}
+AGENT_RUN_ARTIFACT_SUFFIXES = {".jsonl"}
 
 
 @dataclass(frozen=True)
 class Worktree:
-    """A newly created worktree and its matching experiment branch."""
+    """The checkout and experiment branch used for one benchmark iteration."""
 
     path: Path
     branch: str
@@ -70,6 +72,35 @@ def find_project_root(start: Path) -> Path:
         capture_output=True,
     )
     return Path(result.stdout.strip()).resolve()
+
+
+def has_agent_run_artifacts(project_root: Path) -> bool:
+    """Return whether ``logs/agent`` contains evidence of an earlier run."""
+    agent_logs = project_root / "logs" / "agent"
+    if not agent_logs.is_dir():
+        return False
+
+    return any(
+        not path.is_symlink()
+        and path.is_file()
+        and (
+            path.name in AGENT_RUN_ARTIFACT_NAMES
+            or path.suffix.lower() in AGENT_RUN_ARTIFACT_SUFFIXES
+        )
+        for path in agent_logs.rglob("*")
+    )
+
+
+def create_baseline_iteration(
+    project_root: Path, stamp: str | None = None
+) -> Worktree:
+    """Describe a cold-start benchmark run in the current checkout."""
+    iteration = stamp or datetime.now().astimezone().strftime("%Y%m%d-%H%M%S-%f")
+    return Worktree(
+        path=project_root,
+        branch=f"self-evolution-baseline-{iteration}",
+        iteration=iteration,
+    )
 
 
 def _worktrees_root(project_root: Path) -> Path:
@@ -363,6 +394,47 @@ def run_evaluation(
     return result
 
 
+def run_benchmark_and_analysis(
+    worktree: Worktree, args: argparse.Namespace
+) -> None:
+    """Run one repository-agent benchmark, evaluate it, and summarize it."""
+    print(f"Launching agent run for {worktree.branch}", flush=True)
+    run_next_iteration(
+        worktree,
+        agent_command=args.agent_command,
+        backend=args.backend,
+        max_parallel_repos=args.max_parallel_repos,
+    )
+    print(f"Evaluating {worktree.branch}", flush=True)
+    evaluation = run_evaluation(
+        worktree,
+        commit0_command=args.commit0_command,
+        backend=args.backend,
+        timeout=args.evaluation_timeout,
+    )
+    print(f"Analyzing iteration {worktree.branch}", flush=True)
+    analysis = asyncio.run(
+        analyze_iteration(
+            worktree.path,
+            worktree.branch,
+            model=args.analysis_model,
+            thinking_level=args.analysis_thinking_level,
+            retries=args.retries,
+            message_timeout=args.analysis_message_timeout,
+            timeout=args.analysis_timeout,
+        )
+    )
+    print(analysis.output.rstrip())
+    print(f"Saved iteration analysis to {analysis.summary_path}", flush=True)
+    if evaluation.returncode != 0:
+        raise subprocess.CalledProcessError(
+            evaluation.returncode,
+            evaluation.args,
+            output=evaluation.stdout,
+            stderr=evaluation.stderr,
+        )
+
+
 def _optional_positive(value: str) -> int | None:
     parsed = int(value)
     return parsed if parsed > 0 else None
@@ -440,15 +512,41 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--skip-next-iteration",
         action="store_true",
-        help="Prepare and commit the evolved worktree without launching agent run",
+        help=(
+            "With prior logs, prepare and commit only; with no logs, skip the "
+            "automatic baseline"
+        ),
     )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Prepare, commit, and launch one self-evolution iteration."""
+    """Bootstrap a baseline or prepare and launch one evolved iteration."""
     args = parse_args(argv)
     project_root = find_project_root(args.project_root)
+
+    if not has_agent_run_artifacts(project_root):
+        if args.skip_next_iteration:
+            print(
+                "No prior agent artifacts found; skipped the automatic baseline "
+                "as requested",
+                flush=True,
+            )
+            return 0
+
+        baseline = create_baseline_iteration(project_root)
+        print(
+            f"No prior agent artifacts found; running baseline {baseline.branch} "
+            f"in {baseline.path}",
+            flush=True,
+        )
+        run_benchmark_and_analysis(baseline, args)
+        print(
+            "Baseline complete. Run self-evolution/run.py again from this "
+            "checkout to create the first evolved worktree.",
+            flush=True,
+        )
+        return 0
 
     worktree = create_worktree(project_root)
     print(f"Created {worktree.path} on branch {worktree.branch}", flush=True)
@@ -478,41 +576,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.skip_next_iteration:
         print("Skipped the next agent iteration as requested", flush=True)
     else:
-        print(f"Launching agent run for {worktree.branch}", flush=True)
-        run_next_iteration(
-            worktree,
-            agent_command=args.agent_command,
-            backend=args.backend,
-            max_parallel_repos=args.max_parallel_repos,
-        )
-        print(f"Evaluating {worktree.branch}", flush=True)
-        evaluation = run_evaluation(
-            worktree,
-            commit0_command=args.commit0_command,
-            backend=args.backend,
-            timeout=args.evaluation_timeout,
-        )
-        print(f"Analyzing iteration {worktree.branch}", flush=True)
-        analysis = asyncio.run(
-            analyze_iteration(
-                worktree.path,
-                worktree.branch,
-                model=args.analysis_model,
-                thinking_level=args.analysis_thinking_level,
-                retries=args.retries,
-                message_timeout=args.analysis_message_timeout,
-                timeout=args.analysis_timeout,
-            )
-        )
-        print(analysis.output.rstrip())
-        print(f"Saved iteration analysis to {analysis.summary_path}", flush=True)
-        if evaluation.returncode != 0:
-            raise subprocess.CalledProcessError(
-                evaluation.returncode,
-                evaluation.args,
-                output=evaluation.stdout,
-                stderr=evaluation.stderr,
-            )
+        run_benchmark_and_analysis(worktree, args)
     return 0
 
 
