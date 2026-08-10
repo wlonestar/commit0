@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from collections import Counter
+from pathlib import Path
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datasets import load_dataset
@@ -12,6 +13,7 @@ from commit0.harness.run_pytest_ids import main as run_tests
 from commit0.harness.get_pytest_ids import main as get_tests
 from commit0.harness.constants import RepoInstance, SPLIT, RUN_PYTEST_LOG_DIR
 from commit0.harness.utils import get_hash_string, get_active_branch
+from services import store_and_notify
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -93,20 +95,26 @@ def main(
 
     # get numbers
     out = []
-    for name in tqdm(log_dirs):
-        report_file = os.path.join(name, "report.json")
-        name = name.split("/")[2]
+    for log_dir_name in tqdm(log_dirs):
+        report_file = os.path.join(log_dir_name, "report.json")
+        name = Path(log_dir_name).parent.parent.name
         test_ids = get_tests(name, verbose=0)
         test_ids = [xx for x in test_ids for xx in x]
         if not os.path.exists(report_file):
-            out.append(
-                {
-                    "name": name,
-                    "sum": 0,
-                    "passed": 0,
-                    "num_passed": 0,
-                    "num_tests": len(test_ids),
-                }
+            result = {
+                "name": name,
+                "sum": 0,
+                "passed": 0,
+                "num_passed": 0,
+                "num_tests": len(test_ids),
+            }
+            out.append(result)
+            store_and_notify(
+                "evaluation",
+                name,
+                branch or "unknown",
+                Path(log_dir_name),
+                details=f"result: 0/{len(test_ids)} (report missing)",
             )
             continue
         with open(report_file, "r") as file:
@@ -140,14 +148,21 @@ def main(
         if "xfail" not in status:
             status["xfail"] = 0
         passed = (status["passed"] + status["xfail"]) / sum(status.values())
-        out.append(
-            {
-                "name": name,
-                "sum": total,
-                "passed": passed,
-                "num_passed": status["passed"] + status["xfail"],
-                "num_tests": len(test_ids),
-            }
+        num_passed = status["passed"] + status["xfail"]
+        result = {
+            "name": name,
+            "sum": total,
+            "passed": passed,
+            "num_passed": num_passed,
+            "num_tests": len(test_ids),
+        }
+        out.append(result)
+        store_and_notify(
+            "evaluation",
+            name,
+            branch or "unknown",
+            Path(log_dir_name),
+            details=f"result: {num_passed}/{len(test_ids)} ({passed:.1%})",
         )
     print("repo,runtime,num_passed/num_tests")
     out = sorted(out, key=lambda x: x["sum"], reverse=True)

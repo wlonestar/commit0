@@ -30,6 +30,7 @@ from commit0.cli import read_commit0_config_file
 from pathlib import Path
 from datetime import datetime
 from agent.display import TerminalDisplay
+from services import store_and_notify
 import queue
 import time
 
@@ -318,6 +319,13 @@ def run_agent_for_repo(
         with open(experiment_log_dir / "eval_results.json", "w") as f:
             json.dump(eval_results, f)
 
+    store_and_notify(
+        "project",
+        repo_name,
+        branch,
+        experiment_log_dir,
+        details=f"agent: {agent_config.agent_name}/{agent_config.model_name}",
+    )
     update_queue.put(("finish_repo", repo_name))
 
 

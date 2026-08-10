@@ -24,6 +24,8 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "pydantic>=2.9.2",
     "structlog>=26.1.0",
+    "boto3>=1.35.0",
+    "requests>=2.32.0",
 ]
 classifiers = [
     "License :: OSI Approved :: MIT License",
@@ -34,7 +36,7 @@ commit0 = "commit0.__main__:main"
 agent = "agent.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["commit0", "agent"]
+packages = ["commit0", "agent", "services"]
 
 [project.optional-dependencies]
 agent = [

@@ -215,11 +215,20 @@ class PiAgents(Agents):
             output = f"\n[PiAgents] agent run failed: {e}\n"
 
         session_state = self.client.get_session_state()
-        with open(log_file, "w") as f:
-            f.write(output)
-            if session_state is not None:
-                f.write("\n\n--- Session Stats ---\n")
-                f.write(session_state.model_dump_json(indent=2, by_alias=True))
+        # Keep the human-readable agent output separate from structured
+        # session metadata. The raw conversation remains in sessions/*.jsonl.
+        log_file.write_text(output, encoding="utf-8")
+        session_stats_file = log_dir / "session_stats.json"
+        if session_state is not None:
+            session_stats_file.write_text(
+                session_state.model_dump_json(indent=2, by_alias=True),
+                encoding="utf-8",
+            )
+        else:
+            session_stats_file.write_text(
+                '{"available": false}\n',
+                encoding="utf-8",
+            )
 
         return PiReturn(log_file, session_state)
 

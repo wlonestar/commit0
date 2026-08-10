@@ -30,6 +30,7 @@ from commit0.cli import read_commit0_config_file
 from pathlib import Path
 from datetime import datetime
 from agent.run_agent import DirContext, run_eval_after_each_commit
+from services import store_and_notify
 
 
 def run_agent_for_repo(
@@ -245,6 +246,14 @@ def run_agent_for_repo(
     if agent_config.record_test_for_each_commit:
         with open(experiment_log_dir / "eval_results.json", "w") as f:
             json.dump(eval_results, f)
+
+    store_and_notify(
+        "project",
+        repo_name,
+        branch,
+        experiment_log_dir,
+        details=f"agent: {agent_config.agent_name}/{agent_config.model_name}",
+    )
 
 
 def run_agent(
